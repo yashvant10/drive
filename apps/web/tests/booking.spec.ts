@@ -145,3 +145,43 @@ test("demo checkout gates trip start and issues no real receipt",async({browser}
     await Promise.all([customer.close(),driver.close(),admin.close()]);
   }
 });
+
+test("mobile customer can select a pickup pin and see provider route or fallback",async({page})=>{
+  test.skip(process.env.PLAYWRIGHT_MUTATIONS!=="1","Requires a disposable database.");
+  await page.setViewportSize({width:360,height:800});
+  await page.route("https://tile.openstreetmap.org/**", route=>route.abort());
+  await page.request.post("/api/v1/auth/register",{data:{name:"Map Test",email:randomUUID()+"@example.com",password:"long-isolated-map-test-password",role:"customer"}});
+  expect((await page.request.post("/api/v1/vehicles",{data:{label:"Map car",transmission:"manual"}})).status()).toBe(201);
+  await page.goto("/customer/book");
+  await page.getByLabel("Pickup address in Bengaluru").fill("MG Road");
+  await page.getByLabel("Destination (optional)").fill("Indiranagar");
+  await page.getByText("Set pickup on map or preview route",{exact:true}).click();
+  const map=page.getByRole("region",{name:"Interactive pickup map"});
+  await expect(map.getByRole("button",{name:"Zoom in"})).toBeVisible();
+  await map.click({position:{x:140,y:130}});
+  await expect(page.getByText(/^Pickup pin -?\d/)).toBeVisible();
+  await page.route("**/api/v1/maps/preview",route=>route.fulfill({
+    json:{line:[[12.97,77.59],[12.98,77.64]],distance_m:4700,duration_s:840,provider:"openrouteservice"},
+  }),{times:1});
+  await page.getByRole("button",{name:"Preview driving route"}).click();
+  await expect(page.getByText(/4.7 km · about 14 min/)).toBeVisible();
+  await page.getByRole("button",{name:"Preview driving route"}).click();
+  await expect(page.getByRole("main").getByRole("alert")).toHaveText(/Routing is unavailable/);
+  await expect(page.getByRole("link",{name:"Open route in Google Maps"})).toHaveAttribute("href",/google\.com\/maps\/dir/);
+  expect(await page.evaluate(()=>window.document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
+});
+
+test("owner signs in to a mobile read-only business dashboard",async({page})=>{
+  test.skip(!process.env.PLAYWRIGHT_OWNER_EMAIL || !process.env.PLAYWRIGHT_OWNER_PASSWORD,"Requires disposable owner credentials.");
+  await page.setViewportSize({width:360,height:800});
+  await page.goto("/owner");
+  await expect(page).toHaveURL(/\/login/);
+  await page.getByLabel("Email").fill(process.env.PLAYWRIGHT_OWNER_EMAIL!);
+  await page.getByLabel("Password").fill(process.env.PLAYWRIGHT_OWNER_PASSWORD!);
+  await page.getByRole("button",{name:"Sign in",exact:true}).click();
+  await expect(page).toHaveURL(/\/owner$/);
+  await expect(page.getByRole("heading",{name:"Captured revenue"})).toBeVisible();
+  await expect(page.getByRole("heading",{name:"Demo checkout activity"})).toBeVisible();
+  expect(await page.evaluate(()=>window.document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
+  expect((await page.request.get("/api/v1/admin/metrics")).status()).toBe(403);
+});

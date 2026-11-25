@@ -4,9 +4,11 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { OwnerOverview } from "./owner-overview";
+import { TripMap, RouteDetails, type Point, type Route } from "./trip-map";
 import { AdvancedPanel, BookingSafety, ProfileSettings } from "./advanced-panels";
 import { ArrowRight, CarFront, LogOut } from "lucide-react";
-import { api, date, money, send, statusText, type Booking, type Driver, type Offer, type Profile, type Quote, type Ticket, type Vehicle } from "@/lib/api";
+import { api, date, money, send, statusText, workspaceHome, type Booking, type Driver, type Offer, type Profile, type Quote, type Ticket, type Vehicle } from "@/lib/api";
 
 const labels: Record<string,string> = {dashboard:"Overview",book:"Book a driver",vehicles:"Vehicles",bookings:"Bookings",settings:"Settings",availability:"Availability",requests:"Requests",trips:"Trips",support:"Support",profile:"Profile",payments:"Payments",verification:"Licence verification",verifications:"Driver verification",earnings:"Earnings",addresses:"Saved addresses",receipts:"Receipts",reviews:"Reviews",notifications:"Notifications",onboarding:"Onboarding","active-trip":"Active trip","skill-passport":"Skill Passport",documents:"Documents",customers:"Customers",drivers:"Drivers","live-operations":"Live operations",pricing:"Pricing",commissions:"Commissions",refunds:"Refunds",payouts:"Payouts",reports:"Reports",incidents:"Safety incidents",staff:"Staff","audit-logs":"Audit logs"};
 
@@ -83,9 +85,12 @@ function BookingForm({plan}: {plan?:string}) {
   const vehicles = useData<Vehicle[]>("/vehicles");
   const addresses = useData<{id:string;address:string;label:string}[]>("/customers/addresses");
   const [pickup,setPickup] = useState("");
+  const [destination,setDestination] = useState("");
+  const [route,setRoute] = useState<Route|null>(null);
   const [pickupPoint,setPickupPoint] = useState<{latitude:number;longitude:number}|null>(null);
   const router = useRouter();
   const action = useAction();
+  const routing = useAction();
   const [chosen,setChosen] = useState(["half-day","full-day"].includes(plan ?? "") ? plan! : "hourly");
   const [requested,setRequested] = useState<{quote:Quote; payload:Record<string,unknown>}|null>(null);
   return <div className="card"><h3>Trip details</h3><State pending={vehicles.isPending} error={vehicles.error} />
@@ -98,11 +103,20 @@ function BookingForm({plan}: {plan?:string}) {
       void action.run(async()=>setRequested({quote:await send<Quote>("/fares/quote",payload),payload}));
     }}>
       <label>Vehicle<select name="vehicle_id">{vehicles.data.map(vehicle=><option value={vehicle.id} key={vehicle.id}>{vehicle.label} · {vehicle.transmission}</option>)}</select></label>
-      {!!addresses.data?.length && <label>Use a saved pickup<select defaultValue="" onChange={event=>{if(event.target.value)setPickup(event.target.value);}}><option value="">Enter an address manually</option>{addresses.data.map(item=><option value={item.address} key={item.id}>{item.label}</option>)}</select></label>}
-      <label>Pickup address in Bengaluru<input name="pickup" value={pickup} onChange={event=>setPickup(event.target.value)} required minLength={5} maxLength={250} /></label>
-      <div className="row"><button type="button" className="button compact secondary" disabled={action.busy} onClick={()=>void action.run(async()=>{setPickupPoint(await currentPosition());setRequested(null);})}>Use my location as pickup pin</button>
-      {pickupPoint && <><span role="status">Pickup pin attached</span><button type="button" className="button compact secondary" onClick={()=>{setPickupPoint(null);setRequested(null);}}>Remove pin</button></>}</div>
-      <label>Destination (optional)<input name="destination" maxLength={250} /></label>
+      {!!addresses.data?.length && <label>Use a saved pickup<select defaultValue="" onChange={event=>{if(event.target.value){setPickup(event.target.value);setPickupPoint(null);setRoute(null);}}}><option value="">Enter an address manually</option>{addresses.data.map(item=><option value={item.address} key={item.id}>{item.label}</option>)}</select></label>}
+      <label>Pickup address in Bengaluru<input name="pickup" value={pickup} onChange={event=>{setPickup(event.target.value);setPickupPoint(null);setRoute(null);}} required minLength={5} maxLength={250} /></label>
+      <label>Destination (optional)<input name="destination" maxLength={250} value={destination} onChange={event=>{setDestination(event.target.value);setRoute(null);}} /></label>
+      <details className="booking-map-details"><summary>Set pickup on map or preview route</summary>
+        <TripMap pickup={pickupPoint} route={route} onPick={point=>{setPickupPoint(point);setRequested(null);setRoute(null);}} />
+        <div className="row">
+          <button type="button" className="button compact secondary" disabled={action.busy} onClick={()=>void action.run(async()=>{setPickupPoint(await currentPosition());setRequested(null);setRoute(null);})}>Use my location as pickup pin</button>
+          {pickupPoint && <button type="button" className="button compact secondary" onClick={()=>{setPickupPoint(null);setRequested(null);setRoute(null);}}>Remove pin</button>}
+          <button type="button" className="button compact secondary" disabled={routing.busy || pickup.trim().length<5 || destination.trim().length<5} onClick={()=>void routing.run(async()=>setRoute(await send("/maps/preview",{pickup,destination,pickup_point:pickupPoint})))}>Preview driving route</button>
+          {pickup && destination && <a className="text-link" href={"https://www.google.com/maps/dir/?api=1&origin="+encodeURIComponent(pickup)+"&destination="+encodeURIComponent(destination)} target="_blank" rel="noreferrer">Open route in Google Maps</a>}
+        </div>
+        {route && <RouteDetails route={route} />}
+        <ErrorMessage error={routing.error} />
+      </details>
       <label>Start time (India time, leave blank for now)<input name="schedule_date" type="datetime-local" /></label>
       <label>Booking duration<select name="plan" value={chosen} onChange={event=>setChosen(event.target.value)}><option value="hourly">Hourly</option><option value="half-day">Half day · 4 hours</option><option value="full-day">Full day · 8 hours</option></select></label>
       {chosen === "hourly" && <label>Hours<input name="hours" type="number" min={1} max={12} defaultValue={2} required /></label>}
@@ -167,7 +181,7 @@ function BookingDetail({id,role,canRelease,canDispute}: {id:string;role:string;c
       if(window.confirm("Resolve the booking dispute and restore its previous status?")) void action.run(()=>send("/admin/bookings/"+item.id+"/resolve"));
     }}>Resolve dispute</button>}
     {role === "driver" && <a className="text-link mt-4" href={"https://www.google.com/maps/dir/?api=1&destination="+encodeURIComponent(item.pickup_latitude===null||item.pickup_longitude===null ? item.pickup : (item.pickup_latitude/1000000)+","+(item.pickup_longitude/1000000))} target="_blank" rel="noreferrer">Pickup directions</a>}
-  </>}{item && role !== "admin" && ["DRIVER_EN_ROUTE","DRIVER_ARRIVED","IN_PROGRESS"].includes(item.status) && <LocationPanel booking={item} driver={role === "driver"} />}{item && role === "customer" && <Payments booking={item} />}{item && role!=="admin" && item.status==="DRIVER_ARRIVED" && <PickupVerificationPanel booking={item} customer={role==="customer"} />}{item && <BookingTimeline id={item.id} />}{item && <Handovers booking={item} role={role} />}{item && role !== "admin" && <BookingSafety booking={item} customer={role === "customer"} />}</div>;
+  </>}{item && role !== "admin" && <BookingMap booking={item} />}{item && role !== "admin" && ["DRIVER_EN_ROUTE","DRIVER_ARRIVED","IN_PROGRESS"].includes(item.status) && <LocationPanel booking={item} driver={role === "driver"} />}{item && role === "customer" && <Payments booking={item} />}{item && role!=="admin" && item.status==="DRIVER_ARRIVED" && <PickupVerificationPanel booking={item} customer={role==="customer"} />}{item && <BookingTimeline id={item.id} />}{item && <Handovers booking={item} role={role} />}{item && role !== "admin" && <BookingSafety booking={item} customer={role === "customer"} />}</div>;
 }
 
 function BookingTimeline({id}: {id:string}) {
@@ -290,7 +304,7 @@ export function Portal({user,tab,id,tabs,plan}: {user:Profile;tab:string;id?:str
   const router = useRouter();
   const query = useQueryClient();
   const action = useAction();
-  const nav = (name:string)=>user.role === "admin" && name === "dashboard" ? "/admin" : "/" + user.role + "/" + name;
+  const nav = (name:string)=>name === "dashboard" ? workspaceHome(user.role) : "/" + user.role + "/" + name;
   let panel:ReactNode;
   switch(tab) {
     case "vehicles": panel=<VehiclePanel />;break;
@@ -308,7 +322,7 @@ export function Portal({user,tab,id,tabs,plan}: {user:Profile;tab:string;id?:str
     case "support": panel=<Support role={user.role} />;break;
     case "settings":
     case "profile": panel=user.role === "admin" ? <AdvancedPanel role={user.role} tab={tab} /> : <ProfileSettings user={user} />;break;
-    case "dashboard": panel=user.role === "admin" ? <AdminOverview scope={user.staff_scope} /> : <><div className="card"><h3>Welcome, {user.name}</h3><p>{user.role === "customer" ? "Manage your vehicles and upcoming driver requests." : "Manage availability and review driver requests."}</p><Link className="button compact mt-4" href={nav(user.role === "customer" ? "book" : "availability")}>{user.role === "customer" ? "Book a driver" : "Set availability"} <ArrowRight size={17} /></Link></div><BookingList role={user.role} /></>;break;
+    case "dashboard": panel=user.role === "owner" ? <OwnerOverview /> : user.role === "admin" ? <AdminOverview scope={user.staff_scope} /> : <><div className="card"><h3>Welcome, {user.name}</h3><p>{user.role === "customer" ? "Manage your vehicles and upcoming driver requests." : "Manage availability and review driver requests."}</p><Link className="button compact mt-4" href={nav(user.role === "customer" ? "book" : "availability")}>{user.role === "customer" ? "Book a driver" : "Set availability"} <ArrowRight size={17} /></Link></div><BookingList role={user.role} /></>;break;
     default: panel=<AdvancedPanel role={user.role} tab={tab} />;
   }
   return <main className="portal"><div className="wrap portal-layout"><nav className="portal-nav" aria-label="Workspace">
@@ -509,6 +523,32 @@ function useBookingEvents(id: string, enabled: boolean) {
 }
 
 type DriverPosition = {latitude:number; longitude:number; accuracy_m:number; recorded_at:string; stale:boolean};
+
+function BookingMap({booking}: {booking:Booking}) {
+  const active=["DRIVER_EN_ROUTE","DRIVER_ARRIVED","IN_PROGRESS"].includes(booking.status);
+  const location=useData<DriverPosition|null>("/locations/"+booking.id,10000,active);
+  const routing=useAction();
+  const [route,setRoute]=useState<Route|null>(null);
+  const pickup:Point|null=booking.pickup_latitude!==null && booking.pickup_longitude!==null
+    ? {latitude:booking.pickup_latitude/1000000,longitude:booking.pickup_longitude/1000000} : null;
+  const live=active?location.data:null;
+  const driver=live?{latitude:live.latitude,longitude:live.longitude}:null;
+  const origin=pickup ? pickup.latitude+","+pickup.longitude : booking.pickup;
+  const href="https://www.google.com/maps/dir/?api=1&destination="+encodeURIComponent(booking.destination||origin)+(booking.destination?"&origin="+encodeURIComponent(origin):"");
+  return <section className="mt-6" aria-label="Booking map">
+    <h3>Booking map</h3>
+    <TripMap pickup={pickup} driver={driver} route={route} />
+    {live && <p className="notice">{live.stale?"Last known driver location":"Driver location shared"} · {date(live.recorded_at)}</p>}
+    {!pickup&&!driver&&!route && <p className="notice">A pickup pin or shared driver location is needed to show markers.</p>}
+    <div className="flex flex-wrap gap-2 mt-3">
+      {booking.destination && <button className="button compact secondary" disabled={routing.busy} onClick={()=>void routing.run(async()=>setRoute(await send("/maps/bookings/"+booking.id+"/route",{mode:"planned"})))}>Show planned route</button>}
+      {live && !live.stale && <button className="button compact secondary" disabled={routing.busy} onClick={()=>void routing.run(async()=>setRoute(await send("/maps/bookings/"+booking.id+"/route",{mode:"driver"})))}>Estimate driving time from driver</button>}
+      <a className="text-link" href={href} target="_blank" rel="noreferrer">Open directions in Google Maps</a>
+    </div>
+    {route && <RouteDetails route={route} />}
+    <ErrorMessage error={routing.error} />
+  </section>;
+}
 
 function LocationPanel({booking,driver}: {booking:Booking;driver:boolean}) {
   const path = "/locations/"+booking.id;

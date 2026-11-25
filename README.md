@@ -103,3 +103,36 @@ needed to test delivery.
   `../../.venv/bin/python -m app.smtp_check` from `services/api` after
   configuring credentials securely. SMTP acceptance and inbox delivery are
   checked separately.
+
+### Start and open the full website
+
+After installing the dependencies above, run `./scripts/start-local.sh`
+from the repository root. The command starts PostgreSQL, applies migrations,
+starts the API, builds Next.js, and serves the production build on port 3000.
+Keep the terminal running. Use `DRIVEWELL_DEV=1` for hot reload.
+
+If the app is running on a Cloud computer, enable an authenticated HTTP
+preview for port 3000 to open it from your phone. Configure `WEB_ORIGIN` with
+the exact HTTPS preview origin and restart the app so login and booking
+actions work through that URL. Browser GPS requires HTTPS or a browser-local
+loopback address. Public deployment requires its own HTTPS hosting and exact
+origin configuration.
+
+### Map and business-owner workspace
+
+The embedded map defaults to OpenStreetMap raster tiles. If the browser's
+network restricts external domains, allow `tile.openstreetmap.org` or set
+`NEXT_PUBLIC_MAP_TILE_URL` and matching attribution for your approved tile
+provider before building. Tiles are separate from route calculations.
+To enable route geometry and driving-time estimates, set the API-only
+`OPENROUTESERVICE_API_KEY` and allow outbound access to
+`api.openrouteservice.org`. Without routing, pickup pin selection, driver
+markers, and the Google Maps directions link remain available. Drivewell shows
+an estimated driving time from the provider and reports when a fresh location
+or a route is unavailable.
+
+Provision a read-only business owner from a trusted shell. From
+`services/api`, run `../../.venv/bin/python -m app.create_admin --role owner`.
+The owner signs in at the usual login page and lands at `/owner`. Owner
+accounts see aggregate booking and financial metrics. They cannot use the
+admin console or read individual bookings.

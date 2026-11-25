@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert
 
-from . import auth, avatars, billing, bookings, dispatch, handover_photos, operations, panels, payments, phone, pickup, settlements, tracking, workers
+from . import auth, avatars, billing, bookings, dispatch, handover_photos, maps, operations, owner, panels, payments, phone, pickup, settlements, tracking, workers
 from .auth import Current, DB, require
 from .models import Audit, Booking, Decline, Driver, DriverDocument, Earning, FareQuote, Incident, Payment, Refund, Ticket, User, Vehicle
 from .permissions import permit
@@ -21,6 +21,8 @@ api.include_router(phone.router)
 api.include_router(settlements.router)
 api.include_router(panels.router)
 api.include_router(operations.router)
+api.include_router(owner.router)
+api.include_router(maps.router)
 api.include_router(handover_photos.router)
 api.include_router(avatars.router)
 api.include_router(dispatch.router)
@@ -164,6 +166,8 @@ def list_bookings(user: Current, db: DB):
         query = query.where(Booking.customer_id == user.id)
     elif user.role == "driver":
         query = query.where(Booking.driver_id == user.id)
+    elif user.role != "admin":
+        raise HTTPException(403,"This account has access to aggregate business reports only.")
     return list(db.scalars(query.order_by(Booking.created_at.desc()).limit(100)))
 
 

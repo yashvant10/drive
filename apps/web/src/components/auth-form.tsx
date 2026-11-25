@@ -6,7 +6,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { send, type Profile } from "@/lib/api";
+import { send, workspaceHome, type Profile } from "@/lib/api";
 
 const schema = z.object({name:z.string().trim().max(100), email:z.email(),password:z.string().min(12,"Use at least 12 characters.").max(128), role:z.enum(["customer","driver"])});
 
@@ -23,7 +23,7 @@ export function AuthForm({signup, driver, next}: {signup: boolean; driver?: bool
       try {
         const user = await send<Profile>(signup ? "/auth/register":"/auth/login", signup ? data : {email:data.email,password:data.password});
         const allowedNext = next && next.startsWith("/" + user.role + "/") && !next.includes("\\");
-        router.replace(allowedNext ? next : user.role === "admin" ? "/admin" : "/" + user.role + "/dashboard");
+        router.replace(allowedNext ? next : workspaceHome(user.role));
         router.refresh();
       } catch (cause) {setError(cause instanceof Error ? cause.message : "Try again.");}
     })}>

@@ -2,9 +2,10 @@ import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { Header, Footer } from "@/components/site";
 import { Portal } from "@/components/portal";
-import type { Profile, Role } from "@/lib/api";
+import { workspaceHome, type Profile, type Role } from "@/lib/api";
 
 const routes: Record<Role, string[]> = {
+  owner:["dashboard"],
   customer: ["dashboard", "book", "vehicles", "addresses", "bookings", "payments", "receipts", "reviews", "notifications", "support", "settings"],
   driver: ["dashboard", "onboarding", "verification", "availability", "requests", "active-trip", "trips", "earnings", "skill-passport", "documents", "notifications", "support", "profile"],
   admin: ["dashboard", "customers", "drivers", "verifications", "bookings", "live-operations", "pricing", "commissions", "payments", "refunds", "payouts", "reports", "incidents", "reviews", "support", "notifications", "staff", "audit-logs", "settings"],
@@ -32,8 +33,8 @@ export default async function Workspace({params, searchParams}: {
   if (profile.status === 401) redirect("/login?next=" + encodeURIComponent(next));
   if (!profile.ok) throw new Error("The account service is unavailable.");
   const user: Profile = await profile.json();
-  if (user.role !== role) redirect(user.role === "admin" ? "/admin" : "/" + user.role + "/dashboard");
+  if (user.role !== role) redirect(workspaceHome(user.role));
   const tabs = user.role === "admin" && user.staff_scope ? scopedRoutes[user.staff_scope] : routes[user.role];
   if (!tabs.includes(tab)) redirect("/admin");
-  return <><Header /><Portal user={user} tab={tab} id={id} tabs={tabs} plan={typeof plan === "string" ? plan : undefined} /><Footer /></>;
+  return <><Header workspace={workspaceHome(user.role)} /><Portal user={user} tab={tab} id={id} tabs={tabs} plan={typeof plan === "string" ? plan : undefined} /><Footer /></>;
 }

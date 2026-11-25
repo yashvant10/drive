@@ -29,7 +29,7 @@ RUN_ID = uuid4().hex
 def account(role, name):
     client = TestClient(app)
     email = f"{name}.{RUN_ID}@example.com"
-    if role == "admin":
+    if role in {"admin", "owner"}:
         with Session.begin() as db:
             db.add(User(name=name, email=email, password_hash=hasher.hash(PASSWORD), role=role))
         response = client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
@@ -587,3 +587,55 @@ def test_gmail_smtp_check_uses_starttls_and_sends_to_sender(monkeypatch,capsys):
     main()
     assert calls==[("smtp.gmail.com",587),"tls","login","accepted"]
     assert "SMTP accepted" in capsys.readouterr().out
+
+
+def test_owner_reports_and_map_route_scope(monkeypatch):
+    import httpx
+
+    owner = account("owner","businessowner")
+    customer = account("customer","mapcustomer")
+    stranger = account("customer","mapstranger")
+    assert customer.get("/api/v1/owner/overview").status_code == 403
+    assert owner.get("/api/v1/admin/metrics").status_code == 403
+    assert owner.get("/api/v1/bookings").status_code == 403
+    before = owner.get("/api/v1/owner/overview").json()
+    assert TestClient(app).post("/api/v1/auth/register",json={
+        "name":"Attempted owner","email":"attempt-owner@example.com","password":PASSWORD,"role":"owner"
+    }).status_code == 422
+
+    vehicle = customer.post("/api/v1/vehicles",json={"label":"Map vehicle","transmission":"manual"}).json()
+    booking = customer.post("/api/v1/bookings",json={
+        "vehicle_id":vehicle["id"],"pickup":"MG Road","destination":"Indiranagar",
+        "pickup_point":{"latitude":12.972,"longitude":77.601},
+    }).json()
+    from app.models import DemoPayment
+
+    with Session.begin() as db:
+        customer_id=db.scalar(select(User.id).where(User.email==f"mapcustomer.{RUN_ID}@example.com"))
+        db.add(DemoPayment(booking_id=booking["id"],customer_id=customer_id,amount_paise=12345))
+    after = owner.get("/api/v1/owner/overview").json()
+    assert after["booking_count"] == before["booking_count"]+1
+    assert after["demo_payment_count"] == before["demo_payment_count"]+1
+    assert after["captured_paise"] == before["captured_paise"]
+    path = f"/api/v1/maps/bookings/{booking['id']}/route"
+    assert stranger.post(path,json={}).status_code == 404
+    assert owner.post(path,json={}).status_code == 404
+    assert customer.post(path,json={"mode":"driver"}).status_code == 409
+    assert customer.post(path,json={}).status_code == 503
+    monkeypatch.setenv("OPENROUTESERVICE_API_KEY","isolated-route-key")
+    def geocode(url, **kwargs):
+        assert "Indiranagar" in kwargs["params"]["text"]
+        return httpx.Response(200,request=httpx.Request("GET",url),json={"features":[{"geometry":{"coordinates":[77.64,12.98]}}]})
+    def route(url, **kwargs):
+        assert kwargs["headers"]["Authorization"] == "isolated-route-key"
+        assert kwargs["json"]["coordinates"] == [[77.601,12.972],[77.64,12.98]]
+        return httpx.Response(200,request=httpx.Request("POST",url),json={"features":[{
+            "properties":{"summary":{"distance":4500,"duration":850}},
+            "geometry":{"coordinates":[[77.601,12.972],[77.64,12.98]]},
+        }]})
+    monkeypatch.setattr("app.maps.httpx.get",geocode)
+    monkeypatch.setattr("app.maps.httpx.post",route)
+    result = customer.post(path,json={})
+    assert result.json()["line"] == [[12.972,77.601],[12.98,77.64]]
+    assert result.json()["duration_s"] == 850
+    assert customer.post(f"/api/v1/bookings/{booking['id']}/cancel").status_code == 200

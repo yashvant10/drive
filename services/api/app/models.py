@@ -14,7 +14,7 @@ class Record:
 
 class User(Record, Base):
     __tablename__ = "users"
-    __table_args__ = (CheckConstraint("role in ('customer','driver','admin')"),)
+    __table_args__ = (CheckConstraint("role in ('customer','driver','admin','owner')", name="ck_users_role"),)
     email: Mapped[str] = mapped_column(String(254), unique=True)
     name: Mapped[str] = mapped_column(String(100))
     password_hash: Mapped[str] = mapped_column(Text)

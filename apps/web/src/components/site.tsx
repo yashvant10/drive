@@ -4,8 +4,9 @@ import { Brand } from "./brand";
 
 const links = [["How it works", "/how-it-works"], ["Services", "/services"], ["Pricing", "/pricing"], ["Safety", "/safety"]];
 
-export function Header() {
-  return <header className="header"><div className="wrap nav"><Brand /><nav className="desktop-nav" aria-label="Main navigation">{links.map(([label, url]) => <Link key={url} href={url}>{label}</Link>)}</nav><div className="nav-actions"><Link href="/login" className="sign-in">Sign in</Link><Link href="/customer/book" className="button compact">Book a driver <ArrowUpRight size={15} /></Link></div><details className="mobile-nav"><summary aria-label="Navigation"><Menu /></summary><nav aria-label="Mobile navigation">{[...links, ["Sign in", "/login"], ["Book a driver", "/customer/book"]].map(([label, url]) => <Link key={url} href={url}>{label}</Link>)}</nav></details></div></header>;
+export function Header({workspace}: {workspace?:string} = {}) {
+  const actions = workspace ? [["My workspace",workspace]] : [["Sign in","/login"],["Book a driver","/customer/book"]];
+  return <header className="header"><div className="wrap nav"><Brand /><nav className="desktop-nav" aria-label="Main navigation">{links.map(([label, url]) => <Link key={url} href={url}>{label}</Link>)}</nav><div className="nav-actions">{workspace ? <Link href={workspace} className="button compact">My workspace</Link> : <><Link href="/login" className="sign-in">Sign in</Link><Link href="/customer/book" className="button compact">Book a driver <ArrowUpRight size={15} /></Link></>}</div><details className="mobile-nav"><summary aria-label="Navigation"><Menu /></summary><nav aria-label="Mobile navigation">{[...links,...actions].map(([label, url]) => <Link key={url} href={url}>{label}</Link>)}</nav></details></div></header>;
 }
 
 export function Footer() {

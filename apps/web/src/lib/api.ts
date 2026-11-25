@@ -1,4 +1,8 @@
-export type Role = "customer" | "driver" | "admin";
+export type Role = "customer" | "driver" | "admin" | "owner";
+
+export function workspaceHome(role:Role) {
+  return role==="admin" || role==="owner" ? "/"+role : "/"+role+"/dashboard";
+}
 export type Profile = {id: string; name: string; email: string; role: Role; staff_scope?: "operations" | "finance" | "support" | null};
 export type Vehicle = {id: string; label: string; transmission: string; category: string};
 export type Booking = {id: string; area: string; pickup: string; destination: string; status: string; fare_paise: number; starts_at: string; hours: number; driver_id: string | null; driver_name: string | null; driver_has_photo: boolean; pickup_latitude: number | null; pickup_longitude: number | null};

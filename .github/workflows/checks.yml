@@ -37,7 +37,11 @@ jobs:
           export PLAYWRIGHT_ADMIN_EMAIL="browser-admin@example.com"
           export PLAYWRIGHT_ADMIN_PASSWORD="$(python -c 'import secrets; print(secrets.token_urlsafe(30))')"
           echo "::add-mask::$PLAYWRIGHT_ADMIN_PASSWORD"
+          export PLAYWRIGHT_OWNER_EMAIL="browser-owner@example.com"
+          export PLAYWRIGHT_OWNER_PASSWORD="$(python -c 'import secrets; print(secrets.token_urlsafe(30))')"
+          echo "::add-mask::$PLAYWRIGHT_OWNER_PASSWORD"
           PYTHONPATH=. python tests/bootstrap_browser.py
+          printf 'PLAYWRIGHT_OWNER_EMAIL=%s\nPLAYWRIGHT_OWNER_PASSWORD=%s\n' "$PLAYWRIGHT_OWNER_EMAIL" "$PLAYWRIGHT_OWNER_PASSWORD" >> "$GITHUB_ENV"
           printf 'PLAYWRIGHT_ADMIN_EMAIL=%s\nPLAYWRIGHT_ADMIN_PASSWORD=%s\n' "$PLAYWRIGHT_ADMIN_EMAIL" "$PLAYWRIGHT_ADMIN_PASSWORD" >> "$GITHUB_ENV"
           APP_ENV=test PAYMENT_MODE=demo uvicorn app.main:app --host 127.0.0.1 > /tmp/drive-api.log 2>&1 &
           curl -fsS --retry 10 --retry-connrefused http://127.0.0.1:8000/health
